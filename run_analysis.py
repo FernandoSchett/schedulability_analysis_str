@@ -15,7 +15,7 @@ from rt_sched.io_utils import load_datasets_from_paths
 
 
 def _write_summary_csv(path: str, summary: list[dict]) -> None:
-    fieldnames = ["N", "count", "EDF (%)", "DM (%)"]
+    fieldnames = ["N", "count", "EDF (%)", "DM (%)", "dbf(lmax)/lmax < 0.5 (%)", "practical lmax pessimism (%)"]
     with open(path, "w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=fieldnames)
         writer.writeheader()
@@ -35,10 +35,14 @@ def _write_per_dataset_csv(path: str, rows: list[dict]) -> None:
         "l_max",
         "dbf_l_max",
         "dbf_over_lmax",
+        "critical_points_count",
+        "qpa_checked_points",
+        "qpa_reduction_ratio",
+        "lmax_low_dbf_ratio",
+        "lmax_practical_pessimism",
         "expected_schedulable",
         "edf_schedulable",
         "dm_schedulable",
-        "edf_checked_points",
     ]
     with open(path, "w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=fieldnames)
@@ -52,49 +56,45 @@ def _write_per_dataset_csv(path: str, rows: list[dict]) -> None:
                     "l_max": r.get("l_max"),
                     "dbf_l_max": r.get("dbf_l_max"),
                     "dbf_over_lmax": r.get("dbf_over_lmax"),
+                    "critical_points_count": r.get("critical_points_count"),
+                    "qpa_checked_points": r.get("qpa_checked_points"),
+                    "qpa_reduction_ratio": r.get("qpa_reduction_ratio"),
+                    "lmax_low_dbf_ratio": r.get("lmax_low_dbf_ratio"),
+                    "lmax_practical_pessimism": r.get("lmax_practical_pessimism"),
                     "expected_schedulable": r.get("expected_schedulable"),
                     "edf_schedulable": r.get("edf_schedulable"),
                     "dm_schedulable": r.get("dm_schedulable"),
-                    "edf_checked_points": r.get("edf_details", {}).get("checked_points"),
                 }
             )
 
 
 def _write_lmax_analysis(path: str, rows: list[dict]) -> None:
-    # Basic heuristics to flag potentially conservative l_max
-    ratios = [r.get("dbf_over_lmax") for r in rows if isinstance(r.get("dbf_over_lmax"), (int, float))]
     lmaxs = [r.get("l_max") for r in rows if isinstance(r.get("l_max"), (int, float))]
-    if not ratios or not lmaxs:
+    if not lmaxs:
         with open(path, "w", encoding="utf-8") as fh:
             fh.write("No numeric l_max/dbf data available.\n")
         return
 
     median_lmax = sorted(lmaxs)[len(lmaxs) // 2]
-    conservative_count = 0
-    small_checked_but_large_lmax = 0
-    for r in rows:
-        ratio = r.get("dbf_over_lmax")
-        lmax = r.get("l_max")
-        checked = r.get("edf_details", {}).get("checked_points")
-        if isinstance(ratio, (int, float)) and ratio < 0.1:
-            conservative_count += 1
-        if isinstance(lmax, (int, float)) and lmax > median_lmax and isinstance(checked, int) and checked <= 10:
-            small_checked_but_large_lmax += 1
-
+    low_dbf_count = sum(1 for r in rows if r.get("lmax_low_dbf_ratio"))
+    pract_pess_count = sum(1 for r in rows if r.get("lmax_practical_pessimism"))
+    
+    crit_pts = [r.get("critical_points_count") for r in rows if isinstance(r.get("critical_points_count"), (int, float))]
+    checked_pts = [r.get("qpa_checked_points") for r in rows if isinstance(r.get("qpa_checked_points"), (int, float))]
+    red_ratios = [r.get("qpa_reduction_ratio") for r in rows if isinstance(r.get("qpa_reduction_ratio"), (int, float))]
+    
+    avg_crit_pts = sum(crit_pts) / len(crit_pts) if crit_pts else 0.0
+    avg_checked_pts = sum(checked_pts) / len(checked_pts) if checked_pts else 0.0
+    avg_red_ratio = sum(red_ratios) / len(red_ratios) if red_ratios else 0.0
+    
     with open(path, "w", encoding="utf-8") as fh:
-        fh.write(f"Total datasets: {len(rows)}\n")
-        fh.write(f"Median l_max: {median_lmax}\n")
-        fh.write(f"Datasets with dbf(l_max)/l_max < 0.1: {conservative_count}\n")
-        fh.write(
-            "Datasets with l_max > median but QPA solved with <=10 checked points: %d\n" % small_checked_but_large_lmax
-        )
-        fh.write("\nGuidance:\n")
-        fh.write(
-            "- If dbf(l_max)/l_max << 1 then l_max may be overly conservative for that dataset.\n"
-        )
-        fh.write(
-            "- If l_max is large but QPA solved with few checked points, then l_max is conservative in worst-case but QPA's backtracking reduced practical cost.\n"
-        )
+        fh.write(f"Total datasets analyzed: {len(rows)}\n")
+        fh.write(f"Median l_max: {median_lmax:.4f}\n\n")
+        fh.write(f"Datasets with dbf(l_max)/l_max < 0.5: {low_dbf_count} ({(low_dbf_count/len(rows))*100:.2f}%)\n")
+        fh.write(f"Datasets with practical l_max pessimism: {pract_pess_count} ({(pract_pess_count/len(rows))*100:.2f}%)\n\n")
+        fh.write(f"Average critical_points_count: {avg_crit_pts:.2f}\n")
+        fh.write(f"Average qpa_checked_points: {avg_checked_pts:.2f}\n")
+        fh.write(f"Average qpa_reduction_ratio: {avg_red_ratio:.4f}\n")
 
 
 def _escape_latex(text: str) -> str:
@@ -126,11 +126,15 @@ def _summarize_by_input_file(rows: list[dict]) -> list[dict]:
                 "Conjuntos": 0,
                 "EDF ok": 0,
                 "DM ok": 0,
+                "low_dbf": 0,
+                "pract_pess": 0,
             },
         )
         bucket["Conjuntos"] += 1
         bucket["EDF ok"] += int(bool(row.get("edf_schedulable")))
         bucket["DM ok"] += int(bool(row.get("dm_schedulable")))
+        bucket["low_dbf"] += int(bool(row.get("lmax_low_dbf_ratio")))
+        bucket["pract_pess"] += int(bool(row.get("lmax_practical_pessimism")))
         if bucket["N"] is None:
             bucket["N"] = row.get("n_tasks")
 
@@ -152,6 +156,8 @@ def _summarize_by_input_file(rows: list[dict]) -> list[dict]:
                 "Conjuntos": total,
                 "EDF (%)": 100.0 * bucket["EDF ok"] / total if total else 0.0,
                 "DM (%)": 100.0 * bucket["DM ok"] / total if total else 0.0,
+                "dbf(lmax)/lmax < 0.5 (%)": 100.0 * bucket["low_dbf"] / total if total else 0.0,
+                "practical lmax pessimism (%)": 100.0 * bucket["pract_pess"] / total if total else 0.0,
             }
         )
 
@@ -160,7 +166,7 @@ def _summarize_by_input_file(rows: list[dict]) -> list[dict]:
 
 def _write_results_by_dataset_csv(path: str, rows: list[dict]) -> None:
     summary = _summarize_by_input_file(rows)
-    fieldnames = ["Arquivo", "N", "Conjuntos", "EDF (%)", "DM (%)"]
+    fieldnames = ["Arquivo", "N", "Conjuntos", "EDF (%)", "DM (%)", "dbf(lmax)/lmax < 0.5 (%)", "practical lmax pessimism (%)"]
     with open(path, "w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=fieldnames)
         writer.writeheader()
@@ -172,15 +178,16 @@ def _write_results_by_dataset_tex(path: str, rows: list[dict]) -> None:
     with open(path, "w", encoding="utf-8") as fh:
         fh.write("\\begin{table}[H]\n")
         fh.write("\\centering\n")
-        fh.write("\\caption{Resultados de escalonabilidade por arquivo de entrada.}\n")
-        fh.write("\\label{tab:results_by_dataset}\n")
-        fh.write("\\begin{tabular}{l c c c c}\n")
+        fh.write("\\scriptsize\n")
+        fh.write("\\caption{Resultados de escalonabilidade e pessimismo de $l_{max}$ por arquivo.}\n")
+        fh.write("\\label{tab:results_by_dataset_pessimism}\n")
+        fh.write("\\begin{tabular}{l c c c c c c}\n")
         fh.write("\\hline\n")
-        fh.write("\\textbf{Arquivo} & \\textbf{N} & \\textbf{Conjuntos} & \\textbf{EDF (\\%)} & \\textbf{DM (\\%)} \\\\\n")
+        fh.write("\\textbf{Arquivo} & \\textbf{N} & \\textbf{Total} & \\textbf{EDF (\\%)} & \\textbf{DM (\\%)} & \\textbf{dbf/$l_{max}$ < 0.5 (\\%)} & \\textbf{Pessimismo Prático (\\%)} \\\\\n")
         fh.write("\\hline\n")
         for row in summary:
             fh.write(
-                f"{_escape_latex(str(row['Arquivo']))} & {row['N']} & {row['Conjuntos']} & {row['EDF (%)']:.2f} & {row['DM (%)']:.2f} \\\\\n"
+                f"{_escape_latex(str(row['Arquivo']))} & {row['N']} & {row['Conjuntos']} & {row['EDF (%)']:.2f} & {row['DM (%)']:.2f} & {row['dbf(lmax)/lmax < 0.5 (%)']:.2f} & {row['practical lmax pessimism (%)']:.2f} \\\\\n"
             )
         fh.write("\\hline\n")
         fh.write("\\end{tabular}\n")
@@ -216,12 +223,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--summary-csv",
-        default="summary_by_n_tasks.csv",
+        default="resultados/summary_by_n_tasks.csv",
         help="Caminho para salvar tabela agregada em CSV.",
     )
     parser.add_argument(
         "--details-json",
-        default="detailed_results.json",
+        default="resultados/detailed_results.json",
         help="Caminho para salvar resultados detalhados por dataset.",
     )
     return parser.parse_args()
@@ -236,15 +243,19 @@ def main() -> None:
 
     _print_summary_table(summary)
 
+    # ensure output dir exists based on the args
+    out_dir = Path(args.summary_csv).parent if args.summary_csv else Path("resultados")
+    out_dir.mkdir(parents=True, exist_ok=True)
+
     if args.summary_csv:
         _write_summary_csv(args.summary_csv, summary)
     if args.details_json:
         _write_details_json(args.details_json, rows)
-    # per-dataset CSV
-    _write_per_dataset_csv("per_dataset_results.csv", rows)
-    _write_lmax_analysis("lmax_analysis.txt", rows)
-    _write_results_by_dataset_csv("results_by_dataset.csv", rows)
-    _write_results_by_dataset_tex("results_by_dataset.tex", rows)
+    # per-dataset outputs
+    _write_per_dataset_csv(str(out_dir / "per_dataset_results.csv"), rows)
+    _write_lmax_analysis(str(out_dir / "lmax_analysis.txt"), rows)
+    _write_results_by_dataset_csv(str(out_dir / "results_by_dataset.csv"), rows)
+    _write_results_by_dataset_tex(str(out_dir / "results_by_dataset.tex"), rows)
 
 
 if __name__ == "__main__":

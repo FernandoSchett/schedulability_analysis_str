@@ -68,10 +68,11 @@ def rta_deadline_monotonic(
     """
     Exact fixed-priority schedulability test using Deadline Monotonic priorities.
 
-    Interference with release jitter (Audsley-style recurrence):
-      R_i = C_i + sum_{j in hp(i)} ceil((R_i + J_j) / T_j) * C_j
+        Interference with release jitter (Audsley-style recurrence):
+            R_i^{k+1} = C_i + sum_{j in hp(i)} ceil((R_i^k + J_j) / T_j) * C_j
 
-    The task i is considered schedulable if R_i + J_i <= D_i.
+        Deadline criterion used in this project/report alignment:
+            R_i <= D_i
     """
     task_list = normalize_tasks(tasks)
     ordered = _dm_order(task_list)
@@ -79,13 +80,13 @@ def rta_deadline_monotonic(
     response_times: list[dict] = []
 
     for prio_idx, (original_idx, task_i) in enumerate(ordered):
-        deadline_limit = task_i.D - task_i.J
+        deadline_limit = task_i.D
         if deadline_limit < -EPS:
             return {
                 "schedulable": False,
                 "failed_task_original_index": original_idx,
                 "failed_task_dm_priority_index": prio_idx,
-                "reason": "D_i - J_i < 0",
+                "reason": "D_i < 0",
                 "response_times": response_times,
             }
 
@@ -106,7 +107,7 @@ def rta_deadline_monotonic(
                     "schedulable": False,
                     "failed_task_original_index": original_idx,
                     "failed_task_dm_priority_index": prio_idx,
-                    "reason": "R_i + J_i > D_i",
+                    "reason": "R_i > D_i",
                     "response_times": response_times,
                     "computed_r": r_next,
                     "deadline_limit": deadline_limit,
@@ -133,7 +134,7 @@ def rta_deadline_monotonic(
                 "R": r_prev,
                 "J": task_i.J,
                 "D": task_i.D,
-                "meets_deadline": (r_prev + task_i.J) <= task_i.D + EPS,
+                "meets_deadline": r_prev <= task_i.D + EPS,
             }
         )
 
@@ -145,8 +146,11 @@ def rta_deadline_monotonic(
 
 def dbf(t: float, tasks: Sequence[Task | dict]) -> float:
     """
-    Processor-demand bound function with release jitter (Spuri-style form):
-      dbf_i(t) = max(0, floor((t - D_i + J_i) / T_i) + 1) * C_i
+        Processor-demand bound function with release jitter (Spuri-style form):
+            dbf(t) = sum_i max(0, floor((t - (D_i - J_i)) / T_i) + 1) * C_i
+
+        Equivalent implementation term:
+            floor((t - D_i + J_i) / T_i) + 1
     """
     if t <= 0:
         return 0.0
@@ -199,6 +203,35 @@ def _previous_critical_point(
     return best
 
 
+def count_critical_points_until_lmax(
+    tasks: Sequence[Task | dict],
+    l_max: float,
+) -> int:
+    """
+    Count total absolute unique critical points up to l_max.
+    Points take the form t = D_i - J_i + k * T_i >= 0.
+    """
+    if l_max <= 0:
+        return 0
+
+    task_list = normalize_tasks(tasks)
+    unique_points = set()
+
+    for task in task_list:
+        base = task.D - task.J
+        if l_max + EPS < base:
+            continue
+            
+        k_max = _safe_floor((l_max - base) / task.T)
+        for k in range(k_max + 1):
+            point = base + k * task.T
+            if point >= -EPS:
+                # Round to 7 decimal places to avoid floating point precision issues making duplicates look distinct
+                unique_points.add(round(point, 7))
+            
+    return len(unique_points)
+
+
 def qpa(
     tasks: Sequence[Task | dict],
     l_max: float,
@@ -209,7 +242,11 @@ def qpa(
 
     Implements safe backtracking:
       t <- dbf(t)
-    and then aligns to the closest previous critical point.
+        and then aligns to the closest previous critical point
+        t = D_i - J_i + k * T_i, k >= 0.
+
+        Schedulability criterion checked at evaluated points:
+            fail if dbf(t) > t
     """
     task_list = normalize_tasks(tasks)
 
