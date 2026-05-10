@@ -145,6 +145,7 @@ def dbf(t: float, tasks: Sequence[Task | dict]) -> float:
     
     # Baruah et al. (1990), Spuri (1996):
     for task in task_list:
+        # \frac{t - (D_i - J_i)}{T_i}
         njobs = _safe_floor((t - task.D + task.J) / task.T) + 1
         if njobs > 0:
             demand += njobs * task.C
