@@ -1,11 +1,13 @@
 # Python cache
 __pycache__/
+**/__pycache__/
 *.py[cod]
 *$py.class
 
-# Virtual environment
+# Virtual environments
 .venv/
 venv/
+env/
 
 # Build and packaging
 build/
@@ -16,14 +18,30 @@ dist/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.coverage
+htmlcov/
 
-# VS Code local metadata
+# IDE/editor metadata
 .vscode/
-
-# Experiment outputs
-summary_by_n_tasks.csv
-detailed_results.json
+.idea/
+*.swp
+*.swo
 
 # OS files
 .DS_Store
 Thumbs.db
+
+# Environment files
+.env
+.env.*
+
+# Experiment outputs
+summary_by_n_tasks.csv
+results_by_dataset.csv
+per_dataset_results.csv
+detailed_results.json
+lmax_analysis.txt
+results_by_dataset.tex
+
+# Optional generated logs
+*.log

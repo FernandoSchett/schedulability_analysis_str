@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Iterable
 
-from .analysis import qpa, rta_deadline_monotonic
+from .analysis import qpa, rta_deadline_monotonic, dbf
 
 
 ResultRow = dict
@@ -18,12 +18,21 @@ def analyze_datasets(datasets: Iterable[dict]) -> list[ResultRow]:
 
         dm_result = rta_deadline_monotonic(tasks)
         edf_result = qpa(tasks, l_max=l_max)
+        # compute dbf at l_max and ratio to detect conservatism of l_max
+        try:
+            dbf_at_lmax = float(dbf(l_max, tasks))
+        except Exception:
+            dbf_at_lmax = float("nan")
+        ratio = dbf_at_lmax / l_max if l_max > 0 else float("nan")
 
         rows.append(
             {
                 "id": ds.get("id"),
                 "n_tasks": int(ds.get("n_tasks", len(tasks))),
                 "source_file": ds.get("_source_file"),
+                "l_max": l_max,
+                "dbf_l_max": dbf_at_lmax,
+                "dbf_over_lmax": ratio,
                 "expected_schedulable": ds.get("schedulable"),
                 "edf_schedulable": bool(edf_result["schedulable"]),
                 "dm_schedulable": bool(dm_result["schedulable"]),
