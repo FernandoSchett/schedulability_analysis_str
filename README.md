@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 <h1 align="center">⏱️ QPA/RTA Schedulability Analysis ⏱️</h1>
 
 ## Developed by 💻
@@ -88,3 +89,6 @@ The author assumes full responsibility for the correctness, integrity, and origi
 [4] Neil C. Audsley et al. “Applying New Scheduling Theory to Static Priority Pre-emptive Scheduling”. In: *Software Engineering Journal* 8.5 (1993), pp. 284–292.
 
 [5] Universidade Federal da Bahia. *Guia para Uso Ético e Responsável da Inteligência Artificial Generativa na Universidade Federal da Bahia*. Universidade Federal da Bahia. Salvador, April 2025.
+=======
+# schedulability_analysis_str
+>>>>>>> 5cc4e8078092ee9f8ad62ea587e52f09e8027004
