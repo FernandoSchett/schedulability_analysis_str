@@ -58,7 +58,7 @@ def analyze_datasets(datasets: Iterable[dict]) -> list[ResultRow]:
 
 
 def summarize_by_n_tasks(rows: Iterable[ResultRow]) -> list[dict]:
-    grouped = defaultdict(lambda: {"total": 0, "edf_ok": 0, "dm_ok": 0, "low_dbf": 0, "pract_pess": 0})
+    grouped = defaultdict(lambda: {"total": 0, "edf_ok": 0, "dm_ok": 0, "low_dbf": 0, "pract_pess": 0, "qpa_correct": 0, "valid_gt": 0})
 
     for row in rows:
         n = int(row["n_tasks"])
@@ -67,14 +67,22 @@ def summarize_by_n_tasks(rows: Iterable[ResultRow]) -> list[dict]:
         grouped[n]["dm_ok"] += int(bool(row["dm_schedulable"]))
         grouped[n]["low_dbf"] += int(bool(row.get("lmax_low_dbf_ratio")))
         grouped[n]["pract_pess"] += int(bool(row.get("lmax_practical_pessimism")))
+        
+        expected = row.get("expected_schedulable")
+        if expected is not None:
+            grouped[n]["valid_gt"] += 1
+            if bool(expected) == bool(row["edf_schedulable"]):
+                grouped[n]["qpa_correct"] += 1
 
     summary: list[dict] = []
     for n in sorted(grouped):
         total = grouped[n]["total"]
+        valid_gt = grouped[n]["valid_gt"]
         edf_pct = 100.0 * grouped[n]["edf_ok"] / total if total else 0.0
         dm_pct = 100.0 * grouped[n]["dm_ok"] / total if total else 0.0
         dbf_under_half = 100.0 * grouped[n]["low_dbf"] / total if total else 0.0
         pessimism_pct = 100.0 * grouped[n]["pract_pess"] / total if total else 0.0
+        qpa_accuracy = 100.0 * grouped[n]["qpa_correct"] / valid_gt if valid_gt else 0.0
 
         summary.append(
             {
@@ -84,6 +92,7 @@ def summarize_by_n_tasks(rows: Iterable[ResultRow]) -> list[dict]:
                 "DM (%)": dm_pct,
                 "dbf(lmax)/lmax < 0.5 (%)": dbf_under_half,
                 "practical lmax pessimism (%)": pessimism_pct,
+                "QPA Accuracy (%)": qpa_accuracy,
             }
         )
 

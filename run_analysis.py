@@ -7,7 +7,6 @@ import re
 import sys
 from pathlib import Path
 
-# Allows "python run_analysis.py" from project root without installation.
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
 from rt_sched.experiment import analyze_datasets, summarize_by_n_tasks
@@ -15,7 +14,7 @@ from rt_sched.io_utils import load_datasets_from_paths
 
 
 def _write_summary_csv(path: str, summary: list[dict]) -> None:
-    fieldnames = ["N", "count", "EDF (%)", "DM (%)", "dbf(lmax)/lmax < 0.5 (%)", "practical lmax pessimism (%)"]
+    fieldnames = ["N", "count", "EDF (%)", "DM (%)", "dbf(lmax)/lmax < 0.5 (%)", "practical lmax pessimism (%)", "QPA Accuracy (%)"]
     with open(path, "w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=fieldnames)
         writer.writeheader()
@@ -158,6 +157,8 @@ def _summarize_by_input_file(rows: list[dict]) -> list[dict]:
                 "DM ok": 0,
                 "low_dbf": 0,
                 "pract_pess": 0,
+                "qpa_correct": 0,
+                "valid_gt": 0,
             },
         )
         bucket["Conjuntos"] += 1
@@ -167,6 +168,12 @@ def _summarize_by_input_file(rows: list[dict]) -> list[dict]:
         bucket["pract_pess"] += int(bool(row.get("lmax_practical_pessimism")))
         if bucket["N"] is None:
             bucket["N"] = row.get("n_tasks")
+            
+        expected = row.get("expected_schedulable")
+        if expected is not None:
+            bucket["valid_gt"] += 1
+            if bool(expected) == bool(row.get("edf_schedulable")):
+                bucket["qpa_correct"] += 1
 
     def sort_key(item: str) -> tuple[int, int, str]:
         match = re.search(r"n(\d+)_([a-z]+)\.json$", item)
@@ -179,6 +186,7 @@ def _summarize_by_input_file(rows: list[dict]) -> list[dict]:
     for key in sorted(grouped, key=sort_key):
         bucket = grouped[key]
         total = bucket["Conjuntos"]
+        valid_gt = bucket["valid_gt"]
         summary.append(
             {
                 "Arquivo": bucket["Arquivo"],
@@ -188,6 +196,7 @@ def _summarize_by_input_file(rows: list[dict]) -> list[dict]:
                 "DM (%)": 100.0 * bucket["DM ok"] / total if total else 0.0,
                 "dbf(lmax)/lmax < 0.5 (%)": 100.0 * bucket["low_dbf"] / total if total else 0.0,
                 "practical lmax pessimism (%)": 100.0 * bucket["pract_pess"] / total if total else 0.0,
+                "QPA Accuracy (%)": 100.0 * bucket["qpa_correct"] / valid_gt if valid_gt else 0.0,
             }
         )
 
@@ -196,7 +205,7 @@ def _summarize_by_input_file(rows: list[dict]) -> list[dict]:
 
 def _write_results_by_dataset_csv(path: str, rows: list[dict]) -> None:
     summary = _summarize_by_input_file(rows)
-    fieldnames = ["Arquivo", "N", "Conjuntos", "EDF (%)", "DM (%)", "dbf(lmax)/lmax < 0.5 (%)", "practical lmax pessimism (%)"]
+    fieldnames = ["Arquivo", "N", "Conjuntos", "EDF (%)", "DM (%)", "dbf(lmax)/lmax < 0.5 (%)", "practical lmax pessimism (%)", "QPA Accuracy (%)"]
     with open(path, "w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=fieldnames)
         writer.writeheader()
@@ -211,13 +220,13 @@ def _write_results_by_dataset_tex(path: str, rows: list[dict]) -> None:
         fh.write("\\scriptsize\n")
         fh.write("\\caption{Resultados de escalonabilidade e pessimismo de $l_{max}$ por arquivo.}\n")
         fh.write("\\label{tab:results_by_dataset_pessimism}\n")
-        fh.write("\\begin{tabular}{l c c c c c c}\n")
+        fh.write("\\begin{tabular}{l c c c c c c c}\n")
         fh.write("\\hline\n")
-        fh.write("\\textbf{Arquivo} & \\textbf{N} & \\textbf{Total} & \\textbf{EDF (\\%)} & \\textbf{DM (\\%)} & \\textbf{dbf/$l_{max}$ < 0.5 (\\%)} & \\textbf{Pessimismo Prático (\\%)} \\\\\n")
+        fh.write("\\textbf{Arquivo} & \\textbf{N} & \\textbf{Total} & \\textbf{EDF (\\%)} & \\textbf{DM (\\%)} & \\textbf{dbf/$l_{max}$ < 0.5 (\\%)} & \\textbf{Pessimismo Prático (\\%)} & \\textbf{Acurácia QPA (\\%)} \\\\\n")
         fh.write("\\hline\n")
         for row in summary:
             fh.write(
-                f"{_escape_latex(str(row['Arquivo']))} & {row['N']} & {row['Conjuntos']} & {row['EDF (%)']:.2f} & {row['DM (%)']:.2f} & {row['dbf(lmax)/lmax < 0.5 (%)']:.2f} & {row['practical lmax pessimism (%)']:.2f} \\\\\n"
+                f"{_escape_latex(str(row['Arquivo']))} & {row['N']} & {row['Conjuntos']} & {row['EDF (%)']:.2f} & {row['DM (%)']:.2f} & {row['dbf(lmax)/lmax < 0.5 (%)']:.2f} & {row['practical lmax pessimism (%)']:.2f} & {row['QPA Accuracy (%)']:.2f} \\\\\n"
             )
         fh.write("\\hline\n")
         fh.write("\\end{tabular}\n")
@@ -229,9 +238,9 @@ def _print_summary_table(summary: list[dict]) -> None:
         print("Nenhum dataset encontrado.")
         return
 
-    print("N\tEDF (%)\tDM (%)\tcount")
+    print("N\tEDF (%)\tDM (%)\tAcc (%)\tcount")
     for row in summary:
-        print(f"{row['N']}\t{row['EDF (%)']:.2f}\t{row['DM (%)']:.2f}\t{row['count']}")
+        print(f"{row['N']}\t{row['EDF (%)']:.2f}\t{row['DM (%)']:.2f}\t{row.get('QPA Accuracy (%)', 0.0):.2f}\t{row['count']}")
 
 
 def parse_args() -> argparse.Namespace:

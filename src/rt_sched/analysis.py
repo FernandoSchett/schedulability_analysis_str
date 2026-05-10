@@ -6,7 +6,6 @@ from typing import Iterable, Sequence
 
 EPS = 1e-12
 
-
 @dataclass(frozen=True)
 class Task:
     C: float
@@ -65,15 +64,6 @@ def rta_deadline_monotonic(
     tasks: Sequence[Task | dict],
     max_iterations: int = 100_000,
 ) -> dict:
-    """
-    Exact fixed-priority schedulability test using Deadline Monotonic priorities.
-
-        Interference with release jitter (Audsley-style recurrence):
-            R_i^{k+1} = C_i + sum_{j in hp(i)} ceil((R_i^k + J_j) / T_j) * C_j
-
-        Deadline criterion used in this project/report alignment:
-            R_i <= D_i
-    """
     task_list = normalize_tasks(tasks)
     ordered = _dm_order(task_list)
 
@@ -145,13 +135,6 @@ def rta_deadline_monotonic(
 
 
 def dbf(t: float, tasks: Sequence[Task | dict]) -> float:
-    """
-        Processor-demand bound function with release jitter (Spuri-style form):
-            dbf(t) = sum_i max(0, floor((t - (D_i - J_i)) / T_i) + 1) * C_i
-
-        Equivalent implementation term:
-            floor((t - D_i + J_i) / T_i) + 1
-    """
     if t <= 0:
         return 0.0
 
@@ -171,12 +154,6 @@ def _previous_critical_point(
     tasks: Sequence[Task],
     strict: bool,
 ) -> float | None:
-    """
-    Returns the largest critical point <= upper (or < upper when strict=True).
-
-    For jitter-aware dbf, each task contributes points at:
-      t = D_i - J_i + k * T_i, k >= 0
-    """
     best: float | None = None
 
     for task in tasks:
@@ -207,10 +184,6 @@ def count_critical_points_until_lmax(
     tasks: Sequence[Task | dict],
     l_max: float,
 ) -> int:
-    """
-    Count total absolute unique critical points up to l_max.
-    Points take the form t = D_i - J_i + k * T_i >= 0.
-    """
     if l_max <= 0:
         return 0
 
@@ -226,7 +199,6 @@ def count_critical_points_until_lmax(
         for k in range(k_max + 1):
             point = base + k * task.T
             if point >= -EPS:
-                # Round to 7 decimal places to avoid floating point precision issues making duplicates look distinct
                 unique_points.add(round(point, 7))
             
     return len(unique_points)
@@ -237,17 +209,6 @@ def qpa(
     l_max: float,
     max_steps: int = 2_000_000,
 ) -> dict:
-    """
-    Quick Processor-demand Analysis for EDF with constrained deadlines and jitter.
-
-    Implements safe backtracking:
-      t <- dbf(t)
-        and then aligns to the closest previous critical point
-        t = D_i - J_i + k * T_i, k >= 0.
-
-        Schedulability criterion checked at evaluated points:
-            fail if dbf(t) > t
-    """
     task_list = normalize_tasks(tasks)
 
     if l_max <= 0:
