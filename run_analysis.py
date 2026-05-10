@@ -68,6 +68,36 @@ def _write_per_dataset_csv(path: str, rows: list[dict]) -> None:
             )
 
 
+def _write_validation_analysis(path: str, rows: list[dict]) -> None:
+    valid_expected_count = 0
+    correct_edf_count = 0
+    
+    for r in rows:
+        expected = r.get("expected_schedulable")
+        if expected is not None:
+            valid_expected_count += 1
+            if bool(expected) == bool(r.get("edf_schedulable")):
+                correct_edf_count += 1
+
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write("=========================================\n")
+        fh.write("  VALIDAÇÃO DO ALGORITMO QPA (EDF) \n")
+        fh.write("=========================================\n\n")
+        fh.write(f"Total de conjuntos analisados: {len(rows)}\n")
+        fh.write(f"Conjuntos que possuíam Ground Truth ('schedulable'): {valid_expected_count}\n")
+        
+        if valid_expected_count > 0:
+            accuracy = (correct_edf_count / valid_expected_count) * 100
+            fh.write(f"Acertos do QPA vs Ground Truth: {correct_edf_count} de {valid_expected_count}\n")
+            fh.write(f"Acurácia da implementação QPA: {accuracy:.4f}%\n")
+            if correct_edf_count == valid_expected_count:
+                fh.write("\n-> SUCESSO: A implementação do QPA bateu 100% com a verdade de referência!\n")
+            else:
+                fh.write("\n-> AVISO: Houve divergências entre o QPA e a verdade de referência.\n")
+        else:
+            fh.write("\nNenhum conjunto possuía o campo 'schedulable' para verificação de ground truth.\n")
+
+
 def _write_lmax_analysis(path: str, rows: list[dict]) -> None:
     lmaxs = [r.get("l_max") for r in rows if isinstance(r.get("l_max"), (int, float))]
     if not lmaxs:
@@ -254,6 +284,7 @@ def main() -> None:
     # per-dataset outputs
     _write_per_dataset_csv(str(out_dir / "per_dataset_results.csv"), rows)
     _write_lmax_analysis(str(out_dir / "lmax_analysis.txt"), rows)
+    _write_validation_analysis(str(out_dir / "validation_report.txt"), rows)
     _write_results_by_dataset_csv(str(out_dir / "results_by_dataset.csv"), rows)
     _write_results_by_dataset_tex(str(out_dir / "results_by_dataset.tex"), rows)
 

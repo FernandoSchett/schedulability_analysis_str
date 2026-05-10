@@ -45,3 +45,6 @@ results_by_dataset.tex
 
 # Optional generated logs
 *.log
+
+
+resultados/
