@@ -82,6 +82,7 @@ def rta_deadline_monotonic(
 
         r_prev = task_i.C
 
+        # Calculo do ponto fixo Audsley et al. (1993)
         for iteration in range(max_iterations):
             interference = 0.0
             for hp_idx in range(prio_idx):
@@ -92,6 +93,7 @@ def rta_deadline_monotonic(
 
             r_next = task_i.C + interference
 
+            # Criterio de escalonamento
             if r_next > deadline_limit + EPS:
                 return {
                     "schedulable": False,
@@ -140,7 +142,8 @@ def dbf(t: float, tasks: Sequence[Task | dict]) -> float:
 
     task_list = normalize_tasks(tasks)
     demand = 0.0
-
+    
+    # Baruah et al. (1990), Spuri (1996):
     for task in task_list:
         njobs = _safe_floor((t - task.D + task.J) / task.T) + 1
         if njobs > 0:
@@ -204,6 +207,7 @@ def count_critical_points_until_lmax(
     return len(unique_points)
 
 
+# Zhang & Burns (2009)
 def qpa(
     tasks: Sequence[Task | dict],
     l_max: float,
