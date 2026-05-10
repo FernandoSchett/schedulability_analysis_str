@@ -19,7 +19,6 @@ def analyze_datasets(datasets: Iterable[dict]) -> list[ResultRow]:
 
         dm_result = rta_deadline_monotonic(tasks)
         edf_result = qpa(tasks, l_max=l_max)
-        # compute dbf at l_max and ratio to detect conservatism of l_max
         try:
             dbf_at_lmax = float(dbf(l_max, tasks))
         except Exception:
